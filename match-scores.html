@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Match Scores</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f3f4f6;
+    }
+    #search-container {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    #team-search {
+      padding: 8px 12px;
+      width: 300px;
+      font-size: 1em;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    #error-message {
+      color: red;
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    #tabs {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    #tabs button {
+      padding: 8px 16px;
+      border: none;
+      background: #e5e7eb;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #tabs button.active-tab {
+      background-color: #16a34a;
+      color: white;
+    }
+    .grid-wrapper {
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .match-cards-grid {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      justify-items: center;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 20px;
+      width: 100%;
+      max-width: 250px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .field {
+      background-color: #4b5563;
+      color: white;
+      border-radius: 12px;
+      padding: 4px 12px;
+      font-size: 0.8em;
+      margin-bottom: 5px;
+    }
+    .completed {
+      background-color: #d1fae5;
+      color: #065f46;
+      border-radius: 12px;
+      padding: 4px 12px;
+      font-size: 0.8em;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .completed::before { content: "✔"; }
+    .score-row {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      margin-bottom: 10px;
+      width: 100%;
+    }
+    .score {
+      color: white;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.4em;
+      font-weight: bold;
+    }
+    .score.winner { background-color: #16a34a; animation: pulse-grow 2s infinite; }
+    .score.loser { background-color: #dc2626; }
+    .score.draw { background-color: #6b7280; }
+    .vs { margin: 0 8px; font-weight: bold; font-size: 1em; }
+    .team {
+      font-size: 0.95em;
+      margin-top: 4px;
+      max-width: 100px;
+      word-wrap: break-word;
+      text-align: center;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      margin-top: 12px;
+      font-size: 0.8em;
+      color: #4b5563;
+    }
+    @keyframes pulse-grow {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+      50% { transform: scale(1.2); box-shadow: 0 0 20px 10px rgba(22, 163, 74, 0.3); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="search-container">
+    <input type="text" id="team-search" placeholder="Search team name..." />
+  </div>
+  <div id="error-message"></div>
+  <div id="tabs"></div>
+  <div class="grid-wrapper">
+    <div id="cards"></div>
+    <div id="search-results" style="display:none;"></div>
+  </div>
+
+  <script>
+    const sheetUrl = "https://docs.google.com/spreadsheets/d/11jU8VGp_Kg3S6SV6fh2VH1UdP4_f7bwmAzzsNKI71Qw/pub?output=csv";
+    fetch(sheetUrl)
+      .then(response => response.text())
+      .then(csv => {
+        const rows = csv.split("\n").slice(1);
+        const container = document.getElementById("cards");
+        const searchResults = document.getElementById("search-results");
+        const tabsContainer = document.getElementById("tabs");
+        const searchInput = document.getElementById("team-search");
+        const errorMessage = document.getElementById("error-message");
+
+        container.innerHTML = "";
+        tabsContainer.innerHTML = "";
+        errorMessage.textContent = "";
+
+        if (rows.length === 0 || rows.every(r => !r.trim())) {
+          errorMessage.textContent = "No match results are available at the moment.";
+          return;
+        }
+
+        const groups = {};
+        const allMatches = [];
+        let hasFormatError = false;
+
+        rows.forEach((row) => {
+          if (!row.trim()) return;
+          const cols = row.split(",").map(s => s.trim());
+          if (cols.length !== 7) { hasFormatError = true; return; }
+          const [field, team1, score1, team2, score2, time, date] = cols;
+          if (!time) return;
+          const match = { field, team1, score1, team2, score2, time, date };
+          allMatches.push(match);
+          if (!groups[time]) groups[time] = [];
+          groups[time].push(match);
+        });
+
+        if (allMatches.length === 0) {
+          errorMessage.textContent = "No valid match data found. Please check your spreadsheet.";
+          return;
+        }
+        if (hasFormatError) {
+          errorMessage.textContent = "Some data rows may be incorrectly formatted. Please check the spreadsheet.";
+        }
+
+        const times = Object.keys(groups).sort();
+        const allTab = document.createElement("button");
+        allTab.textContent = "All Results";
+        allTab.className = "active-tab";
+        allTab.addEventListener("click", () => {
+          searchInput.value = "";
+          showAllMatches();
+          setActiveTab(allTab);
+        });
+        tabsContainer.appendChild(allTab);
+
+        times.forEach((time) => {
+          const tab = document.createElement("button");
+          tab.textContent = time;
+          tab.addEventListener("click", () => {
+            searchInput.value = "";
+            showMatchesForTime(time);
+            setActiveTab(tab);
+          });
+          tabsContainer.appendChild(tab);
+        });
+
+        times.forEach((time) => {
+          const groupDiv = document.createElement("div");
+          groupDiv.id = `group-${time.replace(/:/g, "")}`;
+          groupDiv.className = "match-cards-grid";
+          container.appendChild(groupDiv);
+        });
+
+        function createCard(match) {
+          const s1 = parseInt(match.score1), s2 = parseInt(match.score2);
+          const w1 = s1 > s2, w2 = s2 > s1, draw = s1 === s2;
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="field">${match.field}</div>
+            <div class="completed">Completed</div>
+            <div class="score-row">
+              <div>
+                <div class="score ${w1 ? "winner" : draw ? "draw" : "loser"}">${s1}</div>
+                <div class="team">${match.team1}</div>
+              </div>
+              <div class="vs">vs</div>
+              <div>
+                <div class="score ${w2 ? "winner" : draw ? "draw" : "loser"}">${s2}</div>
+                <div class="team">${match.team2}</div>
+              </div>
+            </div>
+            <div class="footer">
+              <div><i>⏰</i> ${match.time}</div>
+              <div><i>📅</i> ${match.date}</div>
+            </div>
+          `;
+          return card;
+        }
+
+        times.forEach(time => {
+          const groupDiv = document.getElementById(`group-${time.replace(/:/g, "")}`);
+          groups[time].forEach(match => {
+            const card = createCard(match);
+            groupDiv.appendChild(card);
+          });
+        });
+
+        function showMatchesForTime(time) {
+          container.style.display = "block";
+          searchResults.style.display = "none";
+          times.forEach(t => {
+            const div = document.getElementById(`group-${t.replace(/:/g, "")}`);
+            div.style.display = t === time ? "grid" : "none";
+          });
+        }
+
+        function showAllMatches() {
+          container.style.display = "block";
+          searchResults.style.display = "none";
+          times.forEach(t => {
+            document.getElementById(`group-${t.replace(/:/g, "")}`).style.display = "grid";
+          });
+        }
+
+        function setActiveTab(activeTab) {
+          tabsContainer.querySelectorAll("button").forEach(btn => btn.classList.remove("active-tab"));
+          activeTab.classList.add("active-tab");
+        }
+
+        searchInput.addEventListener("input", () => {
+          const query = searchInput.value.trim().toLowerCase();
+          if (!query) {
+            searchResults.style.display = "none";
+            container.style.display = "block";
+            tabsContainer.style.display = "flex";
+            showAllMatches();
+            setActiveTab(allTab);
+            errorMessage.textContent = "";
+            return;
+          }
+          tabsContainer.style.display = "none";
+          container.style.display = "none";
+          searchResults.style.display = "grid";
+          searchResults.className = "match-cards-grid";
+          searchResults.innerHTML = "";
+          const filtered = allMatches.filter(m => m.team1.toLowerCase().includes(query) || m.team2.toLowerCase().includes(query));
+          if (filtered.length === 0) {
+            searchResults.innerHTML = "<p>No matches found.</p>";
+            return;
+          }
+          filtered.forEach(match => {
+            const card = createCard(match);
+            searchResults.appendChild(card);
+          });
+        });
+
+        showAllMatches();
+      })
+      .catch(err => {
+        document.getElementById("error-message").textContent = "Sorry, there seems to be a technical issue. We are working on it.";
+        console.error("Fetch error:", err);
+      });
+  </script>
+</body>
+</html>
